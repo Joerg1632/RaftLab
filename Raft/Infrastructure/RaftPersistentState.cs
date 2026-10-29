@@ -1,7 +1,10 @@
-﻿namespace Raft.Infrastructure;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+using Raft.Core;
 
-public sealed record RaftPersistentState
-(
+namespace Raft.Infrastructure;
+
+public sealed record RaftPersistentState (
     long CurrentTerm,
-    string? VotedFor
+    string? VotedFor,
+    LogEntry[]? Log = null
 );

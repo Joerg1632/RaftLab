@@ -12,8 +12,4 @@
       <_ContentIncludedByDefault Remove="data\node3\state.json" />
     </ItemGroup>
 
-    <ItemGroup>
-      <Folder Include="data\" />
-    </ItemGroup>
-
 </Project>

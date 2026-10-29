@@ -77,6 +77,7 @@ public sealed class RaftHeartbeatWorker : BackgroundService
             options.NodeId,
             0,
             0,
+            Array.Empty<LogEntry>(),
             0
         );
 

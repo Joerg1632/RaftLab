@@ -82,19 +82,13 @@ public sealed class RaftWorker : BackgroundService
         long electionTerm,
         CancellationToken cancellationToken)
     {
-        var request = new VoteRequest(
-            electionTerm,
-            options.NodeId,
-            0,
-            0
-        );
-
+        var (lastLogIndex, lastLogTerm) = node.GetLastLogInfo();
         var tasks = options.Nodes
             .Where(peer => peer.Key != options.NodeId)
             .Select(peer => RequestVoteAsync(
                 peer.Key,
                 peer.Value,
-                request,
+                new VoteRequest(electionTerm, options.NodeId, lastLogIndex, lastLogTerm),
                 cancellationToken
             ))
             .ToArray();

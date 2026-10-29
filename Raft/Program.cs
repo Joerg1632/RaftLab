@@ -37,7 +37,7 @@ builder.Services.AddHostedService<RaftWorker>();
 
 var statePath = Path.Combine(
     builder.Environment.ContentRootPath,
-    "data",
+    "Data",
     options.NodeId,
     "state.json"
 );
