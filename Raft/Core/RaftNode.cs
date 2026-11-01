@@ -12,6 +12,7 @@ public sealed class RaftNode
     private readonly string nodeId;
     private NodeRole role = NodeRole.Follower;
     private long currentTerm = 0;
+    private long commitIndex = 0;
     private string? votedFor;
     private string? leaderId;
     private readonly FileRaftStateStore store;
@@ -39,6 +40,27 @@ public sealed class RaftNode
         log.AddRange(persistentState.Log ?? []);
         
         ResetElectionTimer();
+    }
+    
+    private void AdvanceCommitIndex()
+    {
+        if (role != NodeRole.Leader)
+            return;
+
+        var majority = memberIds.Count / 2 + 1;
+        for (long index = log.Count; index > commitIndex; index--)
+        {
+            var entry = log[checked((int)(index - 1))];
+            if (entry.Term != currentTerm)
+                continue;
+
+            var replicatedCount = 1 + matchIndex.Values.Count(matched => matched >= index);
+            if (replicatedCount >= majority)
+            {
+                commitIndex = index;
+                return;
+            }
+        }
     }
     
     private void ResetElectionTimer()
@@ -82,6 +104,14 @@ public sealed class RaftNode
     {
         nextIndex.Clear();
         matchIndex.Clear();
+    }
+    
+    public long GetCommitIndex()
+    {
+        lock (sync)
+        {
+            return commitIndex;
+        }
     }
     
     public (long lastLogIndex, long lastLogTerm) GetLastLogInfo()
@@ -239,6 +269,88 @@ public sealed class RaftNode
         }
     }
     
+    public AppendEntriesRequest? PrepareAppendEntries(string peerId)
+    {
+        lock (sync)
+        {
+            if (role != NodeRole.Leader)
+                return null;
+
+            if (!nextIndex.TryGetValue(peerId, out var next))
+                return null;
+
+            var lastLogIndex = log.Count;
+            if (next < 1 || next > lastLogIndex + 1)
+                throw new InvalidOperationException(
+                    $"Invalid nextIndex for peer {peerId}: {next}");
+
+            var prevLogIndex = next - 1;
+            var prevLogTerm = prevLogIndex == 0
+                ? 0
+                : log[checked((int)prevLogIndex - 1)].Term;
+            
+            var startPosition = checked((int)(next - 1));
+            var entries = log
+                .Skip(startPosition)
+                .ToArray();
+
+            return new AppendEntriesRequest(
+                currentTerm,
+                nodeId,
+                prevLogIndex,
+                prevLogTerm,
+                entries,
+                commitIndex
+            );
+        }
+    }
+    
+    public void HandleAppendEntriesResult(
+        string peerId,
+        AppendEntriesRequest request,
+        AppendEntriesResponse response)
+    {
+        lock (sync)
+        {
+            if (response.Term > currentTerm)
+            {
+                MoveToHigherTerm(response.Term);
+                return;
+            }
+            
+            if (role != NodeRole.Leader ||
+                request.Term != currentTerm ||
+                response.Term != currentTerm ||
+                request.LeaderId != nodeId)
+            {
+                return;
+            }
+
+            if (!nextIndex.TryGetValue(peerId, out var value))
+                return;
+
+            if (response.Success)
+            {
+                var replicatedThrough = checked(
+                    request.PrevLogIndex + request.Entries.Count
+                );
+                matchIndex[peerId] = Math.Max(matchIndex[peerId], replicatedThrough);
+                nextIndex[peerId] = Math.Max(value,matchIndex[peerId] + 1);
+                
+                AdvanceCommitIndex();
+                
+                return;
+            }
+            
+            if (nextIndex[peerId] != request.PrevLogIndex + 1)
+                return;
+
+            nextIndex[peerId] = Math.Max(
+                matchIndex[peerId] + 1,
+                nextIndex[peerId] - 1
+            );
+        }
+    }
     
     public AppendEntriesResponse HandleAppendEntries(AppendEntriesRequest request)
     {
@@ -260,7 +372,7 @@ public sealed class RaftNode
             if (request.PrevLogIndex < 0 ||
                 request.PrevLogTerm < 0 ||
                 request.Entries is null ||
-                request.LeaderCommit != 0 ||
+                request.LeaderCommit < 0 ||
                 (request.PrevLogIndex == 0 &&
                  request.PrevLogTerm != 0))
             {
@@ -293,9 +405,9 @@ public sealed class RaftNode
             }
 
             var updatedLog = new List<LogEntry>(log);
+            
             var logPosition = checked((int)request.PrevLogIndex);
             var incomingPosition = 0;
-            
             while (incomingPosition < request.Entries.Count &&
                    logPosition < updatedLog.Count &&
                    updatedLog[logPosition].Term ==
@@ -309,22 +421,27 @@ public sealed class RaftNode
             {
                 if (logPosition < updatedLog.Count)
                 {
-                    updatedLog.RemoveRange(
-                        logPosition,
-                        updatedLog.Count - logPosition
-                    );
+                    if (logPosition < commitIndex)
+                        return new AppendEntriesResponse(currentTerm, false);
+
+                    updatedLog.RemoveRange(logPosition,updatedLog.Count - logPosition);
                 }
 
-                for (var i = incomingPosition;
-                     i < request.Entries.Count;
-                     i++)
-                {
+                for (var i = incomingPosition; i < request.Entries.Count; i++)
                     updatedLog.Add(request.Entries[i]);
-                }
-
+                
                 PersistState(currentTerm, votedFor, updatedLog);
+
                 log.Clear();
                 log.AddRange(updatedLog);
+            }
+
+            var matchedThrough = checked(request.PrevLogIndex + request.Entries.Count);
+            if (request.LeaderCommit > commitIndex)
+            {
+                var newCommitIndex = Math.Min(request.LeaderCommit, matchedThrough);
+                if (newCommitIndex > commitIndex)
+                    commitIndex = newCommitIndex;
             }
 
             return new AppendEntriesResponse(currentTerm, true);

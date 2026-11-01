@@ -71,7 +71,7 @@ app.MapPost("/raft/append-entries",
     (AppendEntriesRequest request, RaftNode node) =>
     {
         var response = node.HandleAppendEntries(request);
-
+        
         return Results.Ok(response);
     });
 

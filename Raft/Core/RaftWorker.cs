@@ -134,7 +134,6 @@ public sealed class RaftWorker : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var term = node.TryStartElection();
-
                 if (term.HasValue)
                 {
                     logger.LogInformation(

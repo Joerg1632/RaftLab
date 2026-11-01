@@ -39,7 +39,6 @@ public sealed class RaftHeartbeatWorker : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var term = node.GetLeaderTerm();
-
                 if (term is null)
                 {
                     lastSentTerm = null;
@@ -56,37 +55,24 @@ public sealed class RaftHeartbeatWorker : BackgroundService
                 lastSentTerm = term;
                 lastSentAt = Stopwatch.GetTimestamp();
 
-                await SendHeartbeatsAsync(
-                    term.Value,
-                    stoppingToken);
+                await ReplicateToFollowersAsync(stoppingToken);
             }
         }
         catch (OperationCanceledException)
             when (stoppingToken.IsCancellationRequested)
         {
-            // Приложение завершает работу.
+            // end work
         }
     }
     
-    private async Task SendHeartbeatsAsync(
-        long term,
+    private async Task ReplicateToFollowersAsync(
         CancellationToken cancellationToken)
     {
-        var request = new AppendEntriesRequest(
-            term,
-            options.NodeId,
-            0,
-            0,
-            Array.Empty<LogEntry>(),
-            0
-        );
-
         var tasks = options.Nodes
             .Where(peer => peer.Key != options.NodeId)
-            .Select(peer => SendHeartbeatAsync(
+            .Select(peer => ReplicateToPeerAsync(
                 peer.Key,
                 peer.Value,
-                request,
                 cancellationToken
             ))
             .ToArray();
@@ -94,12 +80,16 @@ public sealed class RaftHeartbeatWorker : BackgroundService
         await Task.WhenAll(tasks);
     }
     
-    private async Task SendHeartbeatAsync(
+    
+    private async Task ReplicateToPeerAsync(
         string peerId,
         string address,
-        AppendEntriesRequest request,
         CancellationToken cancellationToken)
     {
+        var request = node.PrepareAppendEntries(peerId);
+        if (request is null)
+            return;
+
         try
         {
             var url = $"{address.TrimEnd('/')}/raft/append-entries";
@@ -110,53 +100,59 @@ public sealed class RaftHeartbeatWorker : BackgroundService
             );
 
             response.EnsureSuccessStatusCode();
-
+            
             var result = await response.Content
                 .ReadFromJsonAsync<AppendEntriesResponse>(
-                    cancellationToken: cancellationToken);
+                    cancellationToken: cancellationToken
+                );
 
             if (result is null)
             {
                 logger.LogWarning(
-                    "Empty heartbeat response from {PeerId}",
-                    peerId);
-
+                    "Empty AppendEntries response from {PeerId}",
+                    peerId
+                );
                 return;
             }
 
-            if (result.Term > request.Term)
-            {
-                node.ObserveHigherTerm(result.Term);
-            }
+            node.HandleAppendEntriesResult(
+                peerId,
+                request,
+                result
+            );
 
             if (!result.Success)
             {
                 logger.LogDebug(
-                    "Heartbeat rejected by {PeerId} in term {Term}",
+                    "AppendEntries rejected by {PeerId}, term {Term}",
                     peerId,
-                    result.Term);
+                    result.Term
+                );
             }
         }
         catch (HttpRequestException ex)
         {
             logger.LogWarning(
-                "Heartbeat to {PeerId} failed: {Message}",
+                "Replication to {PeerId} failed: {Message}",
                 peerId,
-                ex.Message);
+                ex.Message
+            );
         }
         catch (JsonException ex)
         {
             logger.LogWarning(
-                "Invalid heartbeat response from {PeerId}: {Message}",
+                "Invalid response from {PeerId}: {Message}",
                 peerId,
-                ex.Message);
+                ex.Message
+            );
         }
         catch (OperationCanceledException)
             when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
-                "Heartbeat to {PeerId} timed out",
-                peerId);
+                "Replication to {PeerId} timed out",
+                peerId
+            );
         }
     }
 }
