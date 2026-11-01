@@ -87,5 +87,55 @@ app.MapGet("/debug/node", (RaftOptions raft) =>
             .ToDictionary(node => node.Key, node => node.Value)
     });
 });
+
+app.MapGet("/log", (RaftNode node) => Results.Ok(node.GetLogSnapshot()));
+
+app.MapPost("/entries", async (
+    ClientEntryRequest request,
+    RaftNode node,
+    CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Command))
+    {
+        return Results.BadRequest(new
+        {
+            Error = "Command cannot be empty"
+        });
+    }
+
+    var result = node.TryAppendClientEntry(request.Command);
+    if (result is null)
+    {
+        return Results.Conflict(new
+        {
+            Error = "This node is not the leader",
+            LeaderId = node.GetStatus().LeaderId
+        });
+    }
+
+    var (index, term) = result.Value;
+    var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+    while (System.Diagnostics.Stopwatch.GetElapsedTime(startedAt) < TimeSpan.FromSeconds(3))
+    {
+        if (node.IsEntryCommitted(index, term))
+        {
+            return Results.Ok(new
+            {
+                Index = index,
+                Term = term,
+                Committed = true
+            });
+        }
+
+        await Task.Delay(50, cancellationToken);
+    }
+
+    return Results.Accepted("/log", new
+    {
+        Index = index,
+        Term = term,
+        Committed = false
+    });
+});
     
 app.Run();    

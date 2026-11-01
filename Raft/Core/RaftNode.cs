@@ -257,10 +257,10 @@ public sealed class RaftNode
             if (!candidateUpToDate)
                 return new VoteResponse(currentTerm, false);
 
-            if (votedFor is null)
+            if (votedFor is not null &&
+                votedFor != request.CandidateId)
             {
-                PersistState(currentTerm, request.CandidateId);
-                votedFor = request.CandidateId;
+                return new VoteResponse(currentTerm, false);
             }
             
             ResetElectionTimer();
@@ -445,6 +445,58 @@ public sealed class RaftNode
             }
 
             return new AppendEntriesResponse(currentTerm, true);
+        }
+    }
+    
+    public (long Index, long Term)? TryAppendClientEntry(string command)
+    {
+        lock (sync)
+        {
+            if (role != NodeRole.Leader)
+                return null;
+
+            var entry = new LogEntry(currentTerm, command);
+            var updatedLog = new List<LogEntry>(log) { entry };
+
+            PersistState(currentTerm, votedFor, updatedLog);
+            log.Add(entry);
+            AdvanceCommitIndex();
+
+            return (log.Count, currentTerm);
+        }
+    }
+    
+    public object GetLogSnapshot()
+    {
+        lock (sync)
+        {
+            return new
+            {
+                NodeId = nodeId,
+                Role = role.ToString(),
+                CurrentTerm = currentTerm,
+                LeaderId = leaderId,
+                CommitIndex = commitIndex,
+
+                Entries = log.Select((entry, i) => new
+                {
+                    Index = i + 1,
+                    entry.Term,
+                    entry.Command,
+                    Committed = i + 1 <= commitIndex
+                }).ToArray()
+            };
+        }
+    }
+    
+    public bool IsEntryCommitted(long index, long term)
+    {
+        lock (sync)
+        {
+            return index > 0 &&
+                   index <= commitIndex &&
+                   index <= log.Count &&
+                   log[checked((int)(index - 1))].Term == term;
         }
     }
 }
