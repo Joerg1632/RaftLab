@@ -197,6 +197,15 @@ public sealed class RaftNode
             var majority = memberIds.Count / 2 + 1;
             if (votes < majority)
                 return false;
+            
+            var noOp = new LogEntry(currentTerm, "__raft_noop__");
+            var updatedLog = new List<LogEntry>(log)
+            {
+                noOp
+            };
+
+            PersistState(currentTerm, votedFor, updatedLog);
+            log.Add(noOp);
 
             role = NodeRole.Leader;
             leaderId = nodeId;
@@ -257,12 +266,15 @@ public sealed class RaftNode
             if (!candidateUpToDate)
                 return new VoteResponse(currentTerm, false);
 
-            if (votedFor is not null &&
-                votedFor != request.CandidateId)
-            {
+            if (votedFor is not null && votedFor != request.CandidateId)
                 return new VoteResponse(currentTerm, false);
+
+            if (votedFor is null)
+            {
+                PersistState(currentTerm, request.CandidateId);
+                votedFor = request.CandidateId;
             }
-            
+
             ResetElectionTimer();
             
             return new VoteResponse(currentTerm, true);
