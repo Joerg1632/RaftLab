@@ -33,7 +33,6 @@ public sealed class RaftHeartbeatWorker : BackgroundService
 
         long? lastSentTerm = null;
         long lastSentAt = 0;
-
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -61,7 +60,7 @@ public sealed class RaftHeartbeatWorker : BackgroundService
         catch (OperationCanceledException)
             when (stoppingToken.IsCancellationRequested)
         {
-            // end work
+            
         }
     }
     
@@ -79,7 +78,6 @@ public sealed class RaftHeartbeatWorker : BackgroundService
 
         await Task.WhenAll(tasks);
     }
-    
     
     private async Task ReplicateToPeerAsync(
         string peerId,

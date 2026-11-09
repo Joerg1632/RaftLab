@@ -44,14 +44,11 @@ var statePath = Path.Combine(
 
 builder.Services.AddSingleton(
     new FileRaftStateStore(statePath));
-
 builder.Services.AddHttpClient("raft", client =>
 {
     client.Timeout = TimeSpan.FromMilliseconds(700);
 });
-
 builder.Services.AddHostedService<RaftHeartbeatWorker>();
-
 var app = builder.Build();
 
 app.MapGet("/status", (RaftNode node) =>

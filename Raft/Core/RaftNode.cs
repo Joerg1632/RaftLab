@@ -191,21 +191,13 @@ public sealed class RaftNode
     {
         lock (sync)
         {
-            if (role != NodeRole.Candidate || currentTerm != electionTerm)
+            if (role != NodeRole.Candidate ||
+                currentTerm != electionTerm)
                 return false;
 
             var majority = memberIds.Count / 2 + 1;
             if (votes < majority)
                 return false;
-            
-            var noOp = new LogEntry(currentTerm, "__raft_noop__");
-            var updatedLog = new List<LogEntry>(log)
-            {
-                noOp
-            };
-
-            PersistState(currentTerm, votedFor, updatedLog);
-            log.Add(noOp);
 
             role = NodeRole.Leader;
             leaderId = nodeId;

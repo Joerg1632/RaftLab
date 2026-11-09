@@ -32,7 +32,6 @@ public sealed class RaftWorker : BackgroundService
         try
         {
             var url = $"{address.TrimEnd('/')}/raft/request-vote";
-
             using var response = await httpClient.PostAsJsonAsync(
                 url,
                 request,
@@ -148,7 +147,6 @@ public sealed class RaftWorker : BackgroundService
         catch (OperationCanceledException)
             when (stoppingToken.IsCancellationRequested)
         {
-            // Штатная остановка приложения.
         }
     }
 }
