@@ -1,6 +1,5 @@
 ﻿using Raft.Configuration;
 using Raft.Dto;
-using Raft.Infrastructure;
 using System.Diagnostics;
 
 namespace Raft.Core;
@@ -15,7 +14,6 @@ public sealed class RaftNode
     private long commitIndex = 0;
     private string? votedFor;
     private string? leaderId;
-    private readonly FileRaftStateStore store;
     private readonly HashSet<string> memberIds;
     private readonly RaftOptions options;
     private readonly Dictionary<string, long> nextIndex = new (StringComparer.Ordinal);
@@ -24,21 +22,14 @@ public sealed class RaftNode
     private long electionStartedAt;
     private int electionTimeoutMs;
 
-    public RaftNode(
-        RaftOptions options,
-        FileRaftStateStore store)
+    public RaftNode(RaftOptions options)
     {
         this.options = options;
-        this.store = store;
         nodeId = options.NodeId;
+
         memberIds = options.Nodes.Keys.ToHashSet(
             StringComparer.Ordinal);
 
-        var persistentState = store.Load();
-        currentTerm = persistentState.CurrentTerm;
-        votedFor = persistentState.VotedFor;
-        log.AddRange(persistentState.Log ?? []);
-        
         ResetElectionTimer();
     }
     
@@ -73,24 +64,8 @@ public sealed class RaftNode
         );
     }
     
-    private void PersistState(
-        long term,
-        string? vote,
-        IReadOnlyList<LogEntry>? entries = null)
-    {
-        var state = new RaftPersistentState(
-            term,
-            vote,
-            (entries ?? log).ToArray()
-        );
-
-        store.Save(state);
-    }
-    
     private void MoveToHigherTerm(long term)
     {
-        PersistState(term, null);
-
         currentTerm = term;
         votedFor = null;
         role = NodeRole.Follower;
@@ -154,7 +129,6 @@ public sealed class RaftNode
                 return null;
             
             var nextTerm = checked(currentTerm + 1);
-            PersistState(nextTerm, nodeId);
 
             currentTerm = nextTerm;
             votedFor = nodeId;
@@ -262,13 +236,10 @@ public sealed class RaftNode
                 return new VoteResponse(currentTerm, false);
 
             if (votedFor is null)
-            {
-                PersistState(currentTerm, request.CandidateId);
                 votedFor = request.CandidateId;
-            }
 
             ResetElectionTimer();
-            
+
             return new VoteResponse(currentTerm, true);
         }
     }
@@ -433,8 +404,6 @@ public sealed class RaftNode
 
                 for (var i = incomingPosition; i < request.Entries.Count; i++)
                     updatedLog.Add(request.Entries[i]);
-                
-                PersistState(currentTerm, votedFor, updatedLog);
 
                 log.Clear();
                 log.AddRange(updatedLog);
@@ -460,9 +429,7 @@ public sealed class RaftNode
                 return null;
 
             var entry = new LogEntry(currentTerm, command);
-            var updatedLog = new List<LogEntry>(log) { entry };
 
-            PersistState(currentTerm, votedFor, updatedLog);
             log.Add(entry);
             AdvanceCommitIndex();
 

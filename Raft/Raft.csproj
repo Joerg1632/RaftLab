@@ -6,10 +6,4 @@
         <ImplicitUsings>enable</ImplicitUsings>
     </PropertyGroup>
 
-    <ItemGroup>
-      <_ContentIncludedByDefault Remove="data\node2\state.json" />
-      <_ContentIncludedByDefault Remove="data\node1\state.json" />
-      <_ContentIncludedByDefault Remove="data\node3\state.json" />
-    </ItemGroup>
-
 </Project>
