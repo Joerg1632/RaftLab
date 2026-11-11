@@ -33,13 +33,11 @@ public sealed class RaftHeartbeatWorker : BackgroundService
 
         long? lastSentTerm = null;
         long lastSentAt = 0;
-
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var term = node.GetLeaderTerm();
-
                 if (term is null)
                 {
                     lastSentTerm = null;
@@ -64,7 +62,7 @@ public sealed class RaftHeartbeatWorker : BackgroundService
         catch (OperationCanceledException)
             when (stoppingToken.IsCancellationRequested)
         {
-            // Приложение завершает работу.
+            // end work
         }
     }
     

@@ -7,13 +7,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <_ContentIncludedByDefault Remove="data\node2\state.json" />
-      <_ContentIncludedByDefault Remove="data\node1\state.json" />
-      <_ContentIncludedByDefault Remove="data\node3\state.json" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="data\" />
+      <_ContentIncludedByDefault Remove="Data\node1\state.json" />
+      <_ContentIncludedByDefault Remove="Data\node2\state.json" />
+      <_ContentIncludedByDefault Remove="Data\node3\state.json" />
     </ItemGroup>
 
 </Project>

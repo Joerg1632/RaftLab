@@ -1,7 +1,6 @@
 using Raft.Configuration;
 using Raft.Core;
 using Raft.Dto;
-using Raft.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 var options = builder.Configuration
@@ -34,16 +33,6 @@ builder.WebHost.UseUrls(options.Nodes[options.NodeId]);
 builder.Services.AddSingleton(options);
 builder.Services.AddSingleton<RaftNode>();
 builder.Services.AddHostedService<RaftWorker>();
-
-var statePath = Path.Combine(
-    builder.Environment.ContentRootPath,
-    "data",
-    options.NodeId,
-    "state.json"
-);
-
-builder.Services.AddSingleton(
-    new FileRaftStateStore(statePath));
 
 builder.Services.AddHttpClient("raft", client =>
 {
@@ -87,5 +76,5 @@ app.MapGet("/debug/node", (RaftOptions raft) =>
             .ToDictionary(node => node.Key, node => node.Value)
     });
 });
-    
-app.Run();    
+
+app.Run();

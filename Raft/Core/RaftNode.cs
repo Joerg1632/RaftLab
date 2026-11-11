@@ -1,6 +1,5 @@
 ﻿using Raft.Configuration;
 using Raft.Dto;
-using Raft.Infrastructure;
 using System.Diagnostics;
 
 namespace Raft.Core;
@@ -13,27 +12,20 @@ public sealed class RaftNode
     private long currentTerm = 0;
     private string? votedFor;
     private string? leaderId;
-    private readonly FileRaftStateStore store;
     private readonly HashSet<string> memberIds;
     private readonly RaftOptions options;
     
     private long electionStartedAt;
     private int electionTimeoutMs;
 
-    public RaftNode(
-        RaftOptions options,
-        FileRaftStateStore store)
+    public RaftNode(RaftOptions options)
     {
         this.options = options;
-        this.store = store;
         nodeId = options.NodeId;
+
         memberIds = options.Nodes.Keys.ToHashSet(
             StringComparer.Ordinal);
 
-        var persistentState = store.Load();
-        currentTerm = persistentState.CurrentTerm;
-        votedFor = persistentState.VotedFor;
-        
         ResetElectionTimer();
     }
     
@@ -49,8 +41,6 @@ public sealed class RaftNode
     
     private void MoveToHigherTerm(long term)
     {
-        store.Save(new RaftPersistentState(term, null));
-
         currentTerm = term;
         votedFor = null;
         role = NodeRole.Follower;
@@ -71,10 +61,6 @@ public sealed class RaftNode
                 return null;
             
             var nextTerm = checked(currentTerm + 1);
-            store.Save(new RaftPersistentState(
-                nextTerm,
-                nodeId
-            ));
 
             currentTerm = nextTerm;
             votedFor = nodeId;
@@ -102,9 +88,7 @@ public sealed class RaftNode
         lock (sync)
         {
             if (term > currentTerm)
-            {
                 MoveToHigherTerm(term);
-            }
         }
     }
     
@@ -118,8 +102,7 @@ public sealed class RaftNode
             if (currentTerm != electionTerm)
                 return false;
 
-            int majority = memberIds.Count / 2 + 1;
-
+            var majority = memberIds.Count / 2 + 1;
             if (votes < majority)
                 return false;
 
@@ -167,14 +150,7 @@ public sealed class RaftNode
                 return new VoteResponse(currentTerm, false);
 
             if (votedFor is null)
-            {
-                store.Save(new RaftPersistentState(
-                    currentTerm,
-                    request.CandidateId
-                ));
-
                 votedFor = request.CandidateId;
-            }
             
             ResetElectionTimer();
             

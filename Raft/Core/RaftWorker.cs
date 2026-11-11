@@ -140,7 +140,6 @@ public sealed class RaftWorker : BackgroundService
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 var term = node.TryStartElection();
-
                 if (term.HasValue)
                 {
                     logger.LogInformation(
@@ -155,7 +154,7 @@ public sealed class RaftWorker : BackgroundService
         catch (OperationCanceledException)
             when (stoppingToken.IsCancellationRequested)
         {
-            // Штатная остановка приложения.
+            // endу
         }
     }
 }
